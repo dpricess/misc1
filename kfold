@@ -1,0 +1,450 @@
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { Play, RotateCcw, Info, Settings, ListChecks } from 'lucide-react'; // Added ListChecks icon
+
+// Main App Component
+const App = () => {
+    // State variables for the application
+    const [kFolds, setKFolds] = useState(5); // Number of folds, default to 5
+    const [currentFold, setCurrentFold] = useState(-1); // Current fold being processed (-1 for initial state)
+    const [animationStep, setAnimationStep] = useState('idle'); // Current step in the animation ('idle', 'highlight_train', 'train', 'highlight_test', 'test', 'display_score', 'finished', 'final')
+    const [performanceScores, setPerformanceScores] = useState([]); // Array to store scores for each fold
+    const [isAnimating, setIsAnimating] = useState(false); // Flag to control animation loop
+    const [dataset, setDataset] = useState([]); // The simulated dataset
+    const [message, setMessage] = useState("Welcome! Select 'K' and click 'Start Simulation' to begin."); // Current explanatory message
+    const [averageScore, setAverageScore] = useState(0); // The calculated average performance score
+    const animationTimerRef = useRef(null); // Ref to store the animation timer ID
+
+    // Constants for dataset and animation delays
+    const DATASET_SIZE = 100;
+    const ANIMATION_DELAYS = {
+        'idle': 0,
+        'highlight_train': 1000,
+        'train': 1500,
+        'highlight_test': 1000,
+        'test': 1500,
+        'display_score': 2000,
+        'finished': 1000,
+        'final': 0,
+    };
+
+    // Define the workflow steps and their motivations
+    const workflowSteps = [
+        {
+            id: 'dataset_division',
+            description: '1. Dataset Division',
+            motivation: 'Your entire dataset is divided into K equal-sized subsets, called "folds". This ensures that each part of your data will eventually be used for both training and testing, providing a comprehensive evaluation.',
+            activeSteps: ['idle'] // Active when idle, indicating initial state
+        },
+        {
+            id: 'iteration_start',
+            description: '2. Iteration Start (K Runs)',
+            motivation: 'The process is repeated K times (K "runs" or "iterations"). Each run uses a different subset for testing, making the evaluation robust and less dependent on a single train-test split.',
+            activeSteps: ['idle'] // Active when idle, before first run
+        },
+        {
+            id: 'training_data_selection',
+            description: '3. Training Data Selection',
+            motivation: 'In each run, K-1 folds are combined to form the training data. The model learns patterns and relationships from the majority of the data.',
+            activeSteps: ['highlight_train', 'train']
+        },
+        {
+            id: 'testing_data_selection',
+            description: '4. Testing Data Selection',
+            motivation: 'The remaining single fold is used as the testing (or validation) data. This unseen data evaluates how well the trained model generalizes to new examples, mimicking real-world performance.',
+            activeSteps: ['highlight_test', 'test']
+        },
+        {
+            id: 'model_training',
+            description: '5. Model Training',
+            motivation: 'The model is trained on the selected training data. The model adjusts its internal parameters to minimize errors on the training set.',
+            activeSteps: ['train'] // This step is conceptually part of 'train' animation step
+        },
+        {
+            id: 'model_evaluation',
+            description: '6. Model Evaluation',
+            motivation: 'The trained model\'s performance is evaluated on the testing data. This step provides an unbiased estimate of the model\'s predictive power on data it has not seen during training.',
+            activeSteps: ['test'] // This step is conceptually part of 'test' animation step
+        },
+        {
+            id: 'record_performance',
+            description: '7. Record Performance',
+            motivation: 'A performance score (e.g., accuracy) is recorded for the current run. Each score contributes to the overall assessment of the model\'s reliability.',
+            activeSteps: ['display_score']
+        },
+        {
+            id: 'average_scores',
+            description: '8. Average Scores',
+            motivation: 'After K runs, the average of all K performance scores is calculated. The average provides the most reliable and stable estimate of the model\'s generalization ability, mitigating the impact of random data splits.',
+            activeSteps: ['finished', 'final']
+        }
+    ];
+
+    // Function to generate a simple dataset
+    const generateDataset = useCallback(() => {
+        const newDataset = Array.from({ length: DATASET_SIZE }, (_, i) => ({
+            id: i,
+            value: Math.random() * 100, // Example value
+        }));
+        setDataset(newDataset);
+    }, []);
+
+    // Initialize dataset on component mount
+    useEffect(() => {
+        generateDataset();
+    }, [generateDataset]);
+
+    // Function to calculate the average performance score
+    const calculateAverageScore = useCallback(() => {
+        if (performanceScores.length === 0) return 0;
+        const sum = performanceScores.reduce((acc, score) => acc + score, 0);
+        return sum / performanceScores.length;
+    }, [performanceScores]);
+
+    // Function to advance the animation to the next step
+    const nextStep = useCallback(() => {
+        setAnimationStep((prevStep) => {
+            if (prevStep === 'idle') {
+                setMessage(`Starting K-Fold Cross-Validation with K=${kFolds} folds.`);
+                setCurrentFold(0);
+                return 'highlight_train';
+            } else if (prevStep === 'highlight_train') {
+                setMessage(`Run ${currentFold + 1} of ${kFolds}: Highlighting training data (Folds excluding ${currentFold + 1}).`);
+                return 'train';
+            } else if (prevStep === 'train') {
+                setMessage(`Run ${currentFold + 1} of ${kFolds}: Model is training on ${kFolds - 1} folds...`);
+                return 'highlight_test';
+            } else if (prevStep === 'highlight_test') {
+                setMessage(`Run ${currentFold + 1} of ${kFolds}: Highlighting testing data (Fold ${currentFold + 1}).`);
+                return 'test';
+            } else if (prevStep === 'test') {
+                setMessage(`Run ${currentFold + 1} of ${kFolds}: Model is testing on Fold ${currentFold + 1}...`);
+                const score = Math.floor(Math.random() * 20) + 75; // Random score between 75-95
+                setPerformanceScores((prevScores) => {
+                    const newScores = [...prevScores];
+                    newScores[currentFold] = score; // Store score for current fold
+                    return newScores;
+                });
+                setMessage(`Run ${currentFold + 1} of ${kFolds}: Performance Score for Fold ${currentFold + 1}: ${score.toFixed(2)}% calculated.`);
+                return 'display_score';
+            } else if (prevStep === 'display_score') {
+                if (currentFold < kFolds - 1) {
+                    // Move to the next fold
+                    setCurrentFold((prevFold) => prevFold + 1);
+                    return 'highlight_train';
+                } else {
+                    // All folds processed
+                    setMessage("All folds processed. Calculating average performance...");
+                    setIsAnimating(false); // Stop animation loop
+                    return 'finished';
+                }
+            } else if (prevStep === 'finished') {
+                const avg = calculateAverageScore();
+                setAverageScore(avg);
+                setMessage(`Cross-Validation Complete! Average Performance: ${avg.toFixed(2)}%`);
+                return 'final';
+            }
+            return prevStep; // Should not happen
+        });
+    }, [kFolds, currentFold, calculateAverageScore]);
+
+    // Effect hook to manage the animation loop
+    useEffect(() => {
+        if (isAnimating && animationStep !== 'final') {
+            // Clear any existing timer to prevent multiple timers running
+            if (animationTimerRef.current) {
+                clearTimeout(animationTimerRef.current);
+            }
+            // Set a new timer for the next step based on the current animation step's delay
+            animationTimerRef.current = setTimeout(nextStep, ANIMATION_DELAYS[animationStep]);
+        } else if (animationStep === 'final' && animationTimerRef.current) {
+            // Clear timer if animation is finished
+            clearTimeout(animationTimerRef.current);
+        }
+
+        // Cleanup function to clear the timer when the component unmounts or dependencies change
+        return () => {
+            if (animationTimerRef.current) {
+                clearTimeout(animationTimerRef.current);
+            }
+        };
+    }, [isAnimating, animationStep, currentFold, kFolds, nextStep]);
+
+    // Function to start the simulation
+    const startSimulation = () => {
+        setPerformanceScores(Array(kFolds).fill(null)); // Reset scores for new simulation
+        setAverageScore(0);
+        setIsAnimating(true); // Start animation
+        setAnimationStep('idle'); // Set initial animation step
+    };
+
+    // Function to reset the simulation
+    const resetSimulation = () => {
+        if (animationTimerRef.current) {
+            clearTimeout(animationTimerRef.current); // Clear any active timer
+        }
+        setIsAnimating(false);
+        setKFolds(5); // Reset K to default
+        setCurrentFold(-1);
+        setAnimationStep('idle');
+        setPerformanceScores([]);
+        setAverageScore(0);
+        setMessage("Welcome! Select 'K' and click 'Start Simulation' to begin.");
+        generateDataset(); // Regenerate dataset
+    };
+
+    // Component for visualizing the dataset and folds
+    const DatasetVisualizer = ({ dataset, kFolds, currentFold, animationStep }) => {
+        const pointsPerFold = Math.ceil(dataset.length / kFolds);
+        const folds = Array.from({ length: kFolds }, (_, foldIndex) => {
+            const start = foldIndex * pointsPerFold;
+            const end = Math.min(start + pointsPerFold, dataset.length);
+            return dataset.slice(start, end);
+        });
+
+        return (
+            <div className="relative w-full h-auto min-h-[150px] bg-gray-50 rounded-lg p-4 shadow-inner flex flex-col gap-2 border border-gray-200">
+                {folds.map((fold, foldIndex) => {
+                    let foldClass = 'relative flex flex-wrap gap-0.5 p-2 rounded-md transition-all duration-500 ease-in-out border-2';
+                    let labelClass = 'absolute top-1 left-1 text-xs font-bold px-1 py-0.5 rounded-sm';
+
+                    if (animationStep === 'idle' || animationStep === 'finished' || animationStep === 'final') {
+                        foldClass += ' border-gray-300 bg-gray-100';
+                        labelClass += ' bg-gray-400 text-white';
+                    } else if (foldIndex === currentFold) {
+                        // This is the testing fold
+                        if (animationStep === 'highlight_test' || animationStep === 'test' || animationStep === 'display_score') {
+                            foldClass += ' border-red-500 bg-red-50';
+                            labelClass += ' bg-red-500 text-white';
+                        } else {
+                            foldClass += ' border-gray-300 bg-gray-100'; // Default if not yet highlighted for test
+                            labelClass += ' bg-gray-400 text-white';
+                        }
+                    } else {
+                        // This is a training fold
+                        if (animationStep === 'highlight_train' || animationStep === 'train' || animationStep === 'display_score') {
+                            foldClass += ' border-green-500 bg-green-50';
+                            labelClass += ' bg-green-500 text-white';
+                        } else {
+                            foldClass += ' border-gray-300 bg-gray-100'; // Default if not yet highlighted for training
+                            labelClass += ' bg-gray-400 text-white';
+                        }
+                    }
+
+                    return (
+                        <div key={foldIndex} className={foldClass}>
+                            <span className={labelClass}>Fold {foldIndex + 1}</span>
+                            <div className="flex flex-wrap gap-0.5 mt-4"> {/* Added margin-top to prevent overlap with label */}
+                                {fold.map((point) => {
+                                    let pointClass = 'w-2 h-2 rounded-full';
+                                    if (animationStep === 'idle' || animationStep === 'finished' || animationStep === 'final') {
+                                        pointClass += ' bg-gray-400';
+                                    } else if (foldIndex === currentFold) {
+                                        pointClass += ' bg-red-500';
+                                    } else {
+                                        pointClass += ' bg-green-500';
+                                    }
+                                    return <div key={point.id} className={pointClass}></div>;
+                                })}
+                            </div>
+                        </div>
+                    );
+                })}
+            </div>
+        );
+    };
+
+
+    // Component for controls (K selection, Start, Reset)
+    const ControlPanel = ({ kFolds, setKFolds, startSimulation, resetSimulation, isAnimating }) => {
+        return (
+            <div className="bg-white rounded-lg shadow-md p-6 flex flex-col items-center space-y-4">
+                <h3 className="text-xl font-semibold text-gray-800 flex items-center gap-2">
+                    <Settings className="w-5 h-5 text-indigo-600" /> Simulation Controls
+                </h3>
+                <div className="w-full">
+                    <label htmlFor="k-folds-slider" className="block text-sm font-medium text-gray-700 mb-2">
+                        Number of Folds (K): <span className="font-bold text-indigo-600">{kFolds}</span>
+                    </label>
+                    <input
+                        type="range"
+                        id="k-folds-slider"
+                        min="2"
+                        max="10"
+                        value={kFolds}
+                        onChange={(e) => setKFolds(Number(e.target.value))}
+                        className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-indigo-600"
+                        disabled={isAnimating}
+                    />
+                </div>
+                <div className="flex space-x-4 w-full">
+                    <button
+                        onClick={startSimulation}
+                        disabled={isAnimating}
+                        className={`flex-1 flex items-center justify-center px-4 py-2 rounded-md font-semibold transition-all duration-300
+                            ${isAnimating ? 'bg-gray-300 text-gray-600 cursor-not-allowed' : 'bg-indigo-600 hover:bg-indigo-700 text-white shadow-lg'}`}
+                    >
+                        <Play className="w-5 h-5 mr-2" /> Start Simulation
+                    </button>
+                    <button
+                        onClick={resetSimulation}
+                        className="flex-1 flex items-center justify-center px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-md font-semibold shadow-lg transition-all duration-300"
+                    >
+                        <RotateCcw className="w-5 h-5 mr-2" /> Reset
+                    </button>
+                </div>
+            </div>
+        );
+    };
+
+    // Component for displaying explanations and scores
+    const ExplanationPanel = ({ message, performanceScores, averageScore, kFolds, currentFold, animationStep }) => {
+        return (
+            <div className="bg-white rounded-lg shadow-md p-6 flex flex-col space-y-4">
+                <h3 className="text-xl font-semibold text-gray-800 flex items-center gap-2">
+                    <Info className="w-5 h-5 text-indigo-600" /> Explanation
+                </h3>
+                {currentFold !== -1 && animationStep !== 'idle' && animationStep !== 'finished' && animationStep !== 'final' && (
+                    <div className="bg-indigo-50 p-3 rounded-md border border-indigo-200 text-indigo-800 text-center shadow-inner">
+                        <h4 className="text-lg font-bold">Current Run: {currentFold + 1} of {kFolds}</h4>
+                    </div>
+                )}
+                <p className="text-gray-700 text-lg font-medium bg-gray-50 p-3 rounded-md border border-gray-200">
+                    {message}
+                </p>
+                {performanceScores.length > 0 && (
+                    <div className="mt-4">
+                        <h4 className="text-lg font-semibold text-gray-800 mb-2">Fold Performance:</h4>
+                        <ul className="list-disc list-inside text-gray-700 space-y-1">
+                            {Array.from({ length: kFolds }).map((_, index) => (
+                                <li key={index} className={index === currentFold && animationStep === 'display_score' ? 'font-bold text-indigo-600' : ''}>
+                                    Fold {index + 1}: {performanceScores[index] !== null ? `${performanceScores[index].toFixed(2)}%` : 'Pending...'}
+                                </li>
+                            ))}
+                        </ul>
+                    </div>
+                )}
+                {averageScore > 0 && (
+                    <div className="mt-4 p-3 bg-indigo-100 rounded-md border border-indigo-200 text-indigo-800 font-bold text-xl text-center shadow-inner">
+                        Average Performance: {averageScore.toFixed(2)}%
+                    </div>
+                )}
+            </div>
+        );
+    };
+
+    // New Component for Workflow and Motivation
+    const WorkflowPanel = ({ workflowSteps, currentAnimationStep, currentFold, kFolds }) => {
+        // Determine the active workflow step based on currentAnimationStep
+        const getActiveWorkflowStep = () => {
+            if (currentAnimationStep === 'idle') {
+                return 'dataset_division'; // Initial state, showing dataset division
+            } else if (currentAnimationStep === 'finished' || currentAnimationStep === 'final') {
+                return 'average_scores'; // Final step
+            } else if (currentAnimationStep === 'highlight_train' || currentAnimationStep === 'train') {
+                return 'training_data_selection';
+            } else if (currentAnimationStep === 'highlight_test' || currentAnimationStep === 'test') {
+                 // If it's testing, also conceptually training and evaluating
+                return 'testing_data_selection';
+            } else if (currentAnimationStep === 'display_score') {
+                return 'record_performance';
+            }
+            return null; // No specific step active
+        };
+
+        const activeStepId = getActiveWorkflowStep();
+
+        return (
+            <div className="bg-white rounded-lg shadow-md p-6 flex flex-col space-y-4">
+                <h3 className="text-xl font-semibold text-gray-800 flex items-center gap-2">
+                    <ListChecks className="w-5 h-5 text-indigo-600" /> Workflow & Motivation
+                </h3>
+                <div className="space-y-4">
+                    {workflowSteps.map((step) => (
+                        <div
+                            key={step.id}
+                            className={`p-3 rounded-md border transition-all duration-300
+                                ${activeStepId === step.id ? 'bg-indigo-50 border-indigo-300 shadow-md' : 'bg-gray-50 border-gray-200'}`}
+                        >
+                            <h4 className={`font-semibold text-md ${activeStepId === step.id ? 'text-indigo-700' : 'text-gray-800'}`}>
+                                {step.description}
+                                {step.id === 'iteration_start' && currentFold !== -1 && currentFold < kFolds && (
+                                    <span className="ml-2 text-sm font-normal text-indigo-500">(Run {currentFold + 1} of {kFolds})</span>
+                                )}
+                            </h4>
+                            <p className={`text-sm mt-1 ${activeStepId === step.id ? 'text-indigo-600' : 'text-gray-600'}`}>
+                                {step.motivation}
+                            </p>
+                        </div>
+                    ))}
+                </div>
+            </div>
+        );
+    };
+
+
+    return (
+        <div className="min-h-screen bg-gradient-to-br from-indigo-50 to-purple-100 p-8 font-sans text-gray-900 flex items-center justify-center">
+            <div className="max-w-6xl w-full mx-auto bg-white rounded-xl shadow-2xl overflow-hidden">
+                <header className="bg-indigo-700 text-white p-6 text-center">
+                    <h1 className="text-3xl font-extrabold mb-2">Cross-Validation Visualizer</h1>
+                    <p className="text-indigo-200 text-lg">Understanding K-Fold Cross-Validation</p>
+                </header>
+
+                <main className="p-8 grid grid-cols-1 md:grid-cols-3 gap-8"> {/* Changed to 3 columns */}
+                    {/* Left Column: Controls */}
+                    <div className="space-y-8">
+                        <ControlPanel
+                            kFolds={kFolds}
+                            setKFolds={setKFolds}
+                            startSimulation={startSimulation}
+                            resetSimulation={resetSimulation}
+                            isAnimating={isAnimating}
+                        />
+                        <ExplanationPanel
+                            message={message}
+                            performanceScores={performanceScores}
+                            averageScore={averageScore}
+                            kFolds={kFolds}
+                            currentFold={currentFold}
+                            animationStep={animationStep}
+                        />
+                    </div>
+
+                    {/* Middle Column: Workflow */}
+                    <div className="flex flex-col space-y-4">
+                        <WorkflowPanel
+                            workflowSteps={workflowSteps}
+                            currentAnimationStep={animationStep}
+                            currentFold={currentFold}
+                            kFolds={kFolds}
+                        />
+                    </div>
+
+                    {/* Right Column: Dataset Visualization */}
+                    <div className="flex flex-col space-y-4">
+                        <h3 className="text-xl font-semibold text-gray-800 flex items-center gap-2 mb-2">
+                            <Info className="w-5 h-5 text-indigo-600" /> Dataset Visualization
+                        </h3>
+                        <DatasetVisualizer
+                            dataset={dataset}
+                            kFolds={kFolds}
+                            currentFold={currentFold}
+                            animationStep={animationStep}
+                        />
+                        <div className="mt-4 p-4 bg-gray-50 rounded-lg border border-gray-200 text-gray-700 text-sm">
+                            <p className="font-semibold mb-2">Legend:</p>
+                            <div className="flex items-center mb-1">
+                                <div className="w-4 h-4 rounded-full bg-green-500 mr-2"></div> Training Data
+                            </div>
+                            <div className="flex items-center">
+                                <div className="w-4 h-4 rounded-full bg-red-500 mr-2"></div> Testing Data
+                            </div>
+                        </div>
+                    </div>
+                </main>
+            </div>
+        </div>
+    );
+};
+
+export default App;
