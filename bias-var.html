@@ -1,0 +1,705 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bias-Variance Trade-off Animation</title>
+    <!-- Tailwind CSS CDN for easy styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* Custom CSS for the canvas and overall layout */
+        body {
+            font-family: 'Inter', sans-serif; /* Use Inter font */
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh; /* Ensure body takes full viewport height */
+            background-color: #f0f4f8; /* Light background */
+            color: #333;
+            padding: 20px;
+            box-sizing: border-box;
+        }
+
+        .main-content-wrapper {
+            display: flex;
+            flex-direction: column; /* Stack elements vertically by default */
+            align-items: center;
+            width: 100%;
+            max-width: 900px; /* Max width for content */
+            background-color: #ffffff;
+            border-radius: 12px;
+            box-shadow: 0 10px 20px rgba(0, 0, 0, 0.1);
+            padding: 20px;
+            box-sizing: border-box;
+            flex-grow: 1; /* Allow this wrapper to grow and take available space */
+        }
+
+        .content-area {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            width: 100%;
+        }
+
+        canvas {
+            border: 2px solid #e2e8f0;
+            background-color: #ffffff;
+            border-radius: 8px;
+            display: block;
+            margin-bottom: 20px;
+            width: 100%; /* Make canvas fluid width */
+            max-width: 600px; /* Max width for the canvas */
+            height: auto; /* Maintain aspect ratio */
+        }
+
+        #voice-over-text {
+            min-height: 120px; /* Ensure space for text */
+            text-align: center;
+            margin-top: 20px;
+            padding: 15px;
+            background-color: #e0f2f7;
+            border-radius: 8px;
+            font-size: 1.1em;
+            line-height: 1.6;
+            color: #2c5282;
+            width: 100%;
+            box-sizing: border-box;
+        }
+
+        #data-table-container {
+            margin-top: 20px;
+            width: 100%;
+            max-width: 600px;
+            text-align: center;
+        }
+
+        #data-table-container table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 10px;
+            background-color: #f8fafc;
+            border-radius: 8px;
+            overflow: hidden; /* For rounded corners on table */
+        }
+
+        #data-table-container th, #data-table-container td {
+            border: 1px solid #e2e8f0;
+            padding: 8px 12px;
+            text-align: center;
+        }
+
+        #data-table-container th {
+            background-color: #e0f2f7;
+            font-weight: 600;
+            color: #2c5282;
+        }
+
+        .control-buttons {
+            display: flex;
+            gap: 15px; /* Space between buttons */
+            margin-top: 20px;
+            margin-bottom: 10px;
+        }
+
+        .control-buttons button {
+            background-image: linear-gradient(to right, #6a11cb 0%, #2575fc 100%);
+            color: white;
+            padding: 12px 28px;
+            border-radius: 25px;
+            font-size: 1.1em;
+            font-weight: 600;
+            cursor: pointer;
+            border: none;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+            transition: all 0.3s ease;
+        }
+
+        .control-buttons button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(0, 0, 0, 0.3);
+        }
+
+        .control-buttons button:active {
+            transform: translateY(0);
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
+        }
+
+        /* Responsive adjustments for larger screens */
+        @media (min-width: 768px) {
+            .main-content-wrapper {
+                flex-direction: row; /* Side-by-side for larger screens */
+                justify-content: center; /* Center items horizontally */
+                align-items: flex-start; /* Align items to the top */
+                padding: 30px;
+            }
+            .content-area {
+                flex-direction: row; /* Canvas and text/table side-by-side */
+                justify-content: space-around;
+                align-items: flex-start;
+            }
+            canvas {
+                margin-right: 30px; /* Space between canvas and text */
+                margin-bottom: 0; /* Remove bottom margin when side-by-side */
+            }
+            #voice-over-text {
+                text-align: left;
+                width: calc(100% - 630px); /* Adjust width based on canvas max-width */
+            }
+            #data-table-container {
+                width: calc(100% - 630px); /* Adjust width to match text */
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="main-content-wrapper">
+        <h1 class="text-3xl font-bold text-gray-800 mb-6 w-full text-center">Bias-Variance Trade-off</h1>
+        <div class="content-area">
+            <canvas id="animationCanvas" width="600" height="400"></canvas>
+            <div>
+                <div id="voice-over-text" class="rounded-lg shadow-inner">
+                    <p>Loading animation...</p>
+                </div>
+                <div id="data-table-container">
+                    <!-- Table will be injected here by JavaScript -->
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="control-buttons">
+        <button id="startButton">Start Animation</button>
+        <button id="muteButton">Mute</button>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('animationCanvas');
+        const ctx = canvas.getContext('2d');
+        const voiceOverTextDiv = document.getElementById('voice-over-text');
+        const dataTableContainer = document.getElementById('data-table-container');
+        const startButton = document.getElementById('startButton');
+        const muteButton = document.getElementById('muteButton');
+
+        // Canvas dimensions (will be scaled by CSS, but internal drawing uses these)
+        const CANVAS_WIDTH = 600;
+        const CANVAS_HEIGHT = 400;
+        canvas.width = CANVAS_WIDTH;
+        canvas.height = CANVAS_HEIGHT;
+
+        const padding = 50; // Padding for plotting data
+        const plotWidth = CANVAS_WIDTH - 2 * padding;
+        const plotHeight = CANVAS_HEIGHT - 2 * padding;
+
+        const centerX = CANVAS_WIDTH / 2; // Defined here to be in scope
+        const centerY = CANVAS_HEIGHT / 2; // Defined here to be in scope
+
+        // --- Data Generation and Model Fitting (Moved to top of script) ---
+        const xRangeMin = 0;
+        const xRangeMax = 100;
+        const yRangeMin = 0; // Adjusted based on trueFunction output
+        const yRangeMax = 100; // Adjusted based on trueFunction output
+        const noiseStandardDeviation = 5;
+        const trainingData = generateData(40, xRangeMin, xRangeMax, noiseStandardDeviation);
+
+        // Fit models
+        const linearModel = fitLinear(trainingData);
+        const quadraticModel = fitQuadratic(trainingData);
+        const overfitModel = generateOverfitCurve(trainingData, xRangeMin, xRangeMax); // Visual overfit curve
+
+        let currentAudio = new Audio(); // Create a single Audio object
+        let isMuted = false;
+
+        // True underlying function: y = 0.01 * x^2 - 0.5 * x + 50
+        function trueFunction(x) {
+            return 0.01 * x * x - 0.5 * x + 50;
+        }
+
+        // Generate synthetic data with noise
+        function generateData(numPoints, xMin, xMax, noiseStdDev) {
+            const data = [];
+            for (let i = 0; i < numPoints; i++) {
+                const x = xMin + (Math.random() * (xMax - xMin));
+                const trueY = trueFunction(x);
+                const noisyY = trueY + (Math.random() - 0.5) * 2 * noiseStdDev; // Add random noise
+                data.push({ x: x, y: noisyY });
+            }
+            // Sort by X for easier plotting
+            data.sort((a, b) => a.x - b.x);
+            return data;
+        }
+
+        // Simple Linear Regression (Degree 1 Polynomial)
+        function fitLinear(data) {
+            let sumX = 0, sumY = 0, sumXY = 0, sumX2 = 0;
+            const n = data.length;
+            data.forEach(p => {
+                sumX += p.x;
+                sumY += p.y;
+                sumXY += p.x * p.y;
+                sumX2 += p.x * p.x;
+            });
+
+            const denominator = (n * sumX2 - sumX * sumX);
+            if (denominator === 0) return { slope: 0, intercept: sumY / n, predict: (x) => sumY / n }; // Handle vertical line or single point
+
+            const slope = (n * sumXY - sumX * sumY) / denominator;
+            const intercept = (sumY - slope * sumX) / n;
+
+            return {
+                slope: slope,
+                intercept: intercept,
+                predict: (x) => slope * x + intercept
+            };
+        }
+
+        // Quadratic Regression (Degree 2 Polynomial)
+        // This is a simplified implementation for demonstration, not robust for all cases.
+        // For actual polynomial regression, matrix inversion is typically used.
+        function fitQuadratic(data) {
+            const n = data.length;
+            let sum_x = 0, sum_y = 0, sum_x2 = 0, sum_x3 = 0, sum_x4 = 0, sum_xy = 0, sum_x2y = 0;
+
+            data.forEach(p => {
+                sum_x += p.x;
+                sum_y += p.y;
+                sum_x2 += p.x * p.x;
+                sum_x3 += p.x * p.x * p.x;
+                sum_x4 += p.x * p.x * p.x * p.x;
+                sum_xy += p.x * p.y;
+                sum_x2y += p.x * p.x * p.y;
+            });
+
+            // Solve system of linear equations for a, b, c (for y = ax^2 + bx + c)
+            // Using Cramer's rule or direct substitution for a 3x3 system
+            const A = [
+                [n, sum_x, sum_x2],
+                [sum_x, sum_x2, sum_x3],
+                [sum_x2, sum_x3, sum_x4]
+            ];
+            const B = [sum_y, sum_xy, sum_x2y];
+
+            // Calculate determinant of A
+            const detA = A[0][0] * (A[1][1] * A[2][2] - A[1][2] * A[2][1]) -
+                         A[0][1] * (A[1][0] * A[2][2] - A[1][2] * A[2][0]) +
+                         A[0][2] * (A[1][0] * A[2][1] - A[1][1] * A[2][0]);
+
+            if (detA === 0) {
+                console.warn("Determinant is zero, cannot fit quadratic. Returning linear approximation.");
+                return fitLinear(data); // Fallback to linear if quadratic fit fails
+            }
+
+            // Calculate determinants for a, b, c
+            const detA_a = B[0] * (A[1][1] * A[2][2] - A[1][2] * A[2][1]) -
+                           A[0][1] * (B[1] * A[2][2] - A[1][2] * B[2]) +
+                           A[0][2] * (B[1] * A[2][1] - A[1][1] * B[2]);
+
+            const detA_b = A[0][0] * (B[1] * A[2][2] - A[1][2] * B[2]) -
+                           B[0] * (A[1][0] * A[2][2] - A[1][2] * A[2][0]) +
+                           A[0][2] * (A[1][0] * B[2] - B[1] * A[2][0]);
+
+            const detA_c = A[0][0] * (A[1][1] * B[2] - B[1] * A[2][1]) -
+                           A[0][1] * (A[1][0] * B[2] - B[1] * A[2][0]) +
+                           B[0] * (A[1][0] * A[2][1] - A[1][1] * A[2][0]);
+
+            const a = detA_a / detA;
+            const b = detA_b / detA;
+            const c = detA_c / detA;
+
+            return {
+                a: a,
+                b: b,
+                c: c,
+                predict: (x) => a * x * x + b * x + c
+            };
+        }
+
+        // Generate an "overfit" curve visually (not a true high-degree polyfit, but illustrative)
+        // This simulates a model that tries to hit every point by creating a very wiggly line.
+        function generateOverfitCurve(data, xMin, xMax) {
+            const path = [];
+            const step = (xMax - xMin) / 200; // More steps for smoother curve
+            for (let x = xMin; x <= xMax; x += step) {
+                // Find the two closest data points to interpolate between
+                let p1 = data[0];
+                let p2 = data[data.length - 1];
+                for (let i = 0; i < data.length - 1; i++) {
+                    if (data[i].x <= x && data[i+1].x >= x) {
+                        p1 = data[i];
+                        p2 = data[i+1];
+                        break;
+                    }
+                }
+
+                // Simple linear interpolation for the base, then add "wiggle"
+                let interpolatedY = p1.y + (x - p1.x) * (p2.y - p1.y) / (p2.x - p1.x);
+
+                // Add a high-frequency wiggle that tries to "hit" points more directly
+                // This is a visual trick, not a rigorous polynomial fit.
+                let wiggle = 0;
+                // Add influence from all points, weighted by inverse distance (simplified)
+                data.forEach(p => {
+                    const dist = Math.abs(x - p.x);
+                    if (dist < 20) { // Only influence from nearby points
+                        wiggle += (p.y - interpolatedY) * (1 - dist / 20);
+                    }
+                });
+                path.push({ x: x, y: interpolatedY + wiggle * 0.5 }); // Adjust wiggle strength
+            }
+            return {
+                path: path,
+                predict: (x) => {
+                    // For prediction dots, we'll just use the true function + noise to show poor generalization
+                    // or a simplified interpolation that might be off
+                    const trueY = trueFunction(x);
+                    // Simulate poor generalization by adding significant noise or being off the true curve
+                    return trueY + (Math.random() - 0.5) * 40; // More scatter than true data
+                }
+            };
+        }
+
+
+        // --- Canvas Drawing Functions ---
+
+        /**
+         * Converts data coordinates (x, y) to canvas coordinates (cx, cy).
+         * Assumes x values are in [0, 100] and y values are in [0, 100].
+         */
+        function toCanvasCoords(x, y, xMin, xMax, yMin, yMax) {
+            const cx = padding + ((x - xMin) / (xMax - xMin)) * plotWidth;
+            const cy = CANVAS_HEIGHT - padding - ((y - yMin) / (yMax - yMin)) * plotHeight;
+            return { cx, cy };
+        }
+
+        /**
+         * Draws axes for the plot.
+         */
+        function drawAxes(xMin, xMax, yMin, yMax) {
+            ctx.clearRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT); // Clear canvas
+            ctx.strokeStyle = '#cbd5e0'; /* Light gray */
+            ctx.lineWidth = 1;
+
+            // X-axis
+            ctx.beginPath();
+            ctx.moveTo(padding, CANVAS_HEIGHT - padding);
+            ctx.lineTo(CANVAS_WIDTH - padding, CANVAS_HEIGHT - padding);
+            ctx.stroke();
+
+            // Y-axis
+            ctx.beginPath();
+            ctx.moveTo(padding, CANVAS_HEIGHT - padding);
+            ctx.lineTo(padding, padding);
+            ctx.stroke();
+
+            ctx.fillStyle = '#4a5568';
+            ctx.font = '12px Inter';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'top';
+            ctx.fillText('X Value', centerX, CANVAS_HEIGHT - padding + 10);
+            ctx.textAlign = 'left';
+            ctx.textBaseline = 'middle';
+            ctx.fillText('Y Value', padding - 40, centerY);
+
+            // X-axis labels
+            ctx.textAlign = 'center';
+            ctx.fillText(xMin.toFixed(0), toCanvasCoords(xMin, 0, xMin, xMax, yMin, yMax).cx, CANVAS_HEIGHT - padding + 5);
+            ctx.fillText(xMax.toFixed(0), toCanvasCoords(xMax, 0, xMin, xMax, yMin, yMax).cx, CANVAS_HEIGHT - padding + 5);
+
+            // Y-axis labels
+            ctx.textAlign = 'right';
+            ctx.fillText(yMin.toFixed(0), padding - 5, toCanvasCoords(0, yMin, xMin, xMax, yMin, yMax).cy);
+            ctx.fillText(yMax.toFixed(0), padding - 5, toCanvasCoords(0, yMax, xMin, xMax, yMin, yMax).cy);
+        }
+
+        /**
+         * Draws data points on the canvas.
+         */
+        function drawDataPoints(data, color, xMin, xMax, yMin, yMax) {
+            ctx.fillStyle = color;
+            data.forEach(p => {
+                const { cx, cy } = toCanvasCoords(p.x, p.y, xMin, xMax, yMin, yMax);
+                ctx.beginPath();
+                ctx.arc(cx, cy, 3, 0, Math.PI * 2);
+                ctx.fill();
+            });
+        }
+
+        /**
+         * Draws a fitted line/curve.
+         */
+        function drawFittedLine(model, color, xMin, xMax, yMin, yMax, isOverfitPath = false) {
+            ctx.strokeStyle = color;
+            ctx.lineWidth = 3;
+            ctx.beginPath();
+
+            const step = (xMax - xMin) / 100; // Draw 100 segments for smoothness
+            for (let x = xMin; x <= xMax; x += step) {
+                let y;
+                if (isOverfitPath) {
+                    // For overfit, use the pre-calculated path
+                    const point = model.path.find(p => p.x >= x) || model.path[model.path.length - 1];
+                    y = point.y;
+                } else {
+                    y = model.predict(x);
+                }
+
+                const { cx, cy } = toCanvasCoords(x, y, xMin, xMax, yMin, yMax);
+                if (x === xMin) {
+                    ctx.moveTo(cx, cy);
+                } else {
+                    ctx.lineTo(cx, cy);
+                }
+            }
+            ctx.stroke();
+        }
+
+        /**
+         * Draws prediction dots based on a model.
+         */
+        function drawPredictionDots(model, color, dataPoints, xMin, xMax, yMin, yMax) {
+            ctx.fillStyle = color;
+            dataPoints.forEach(p => {
+                const predictedY = model.predict(p.x);
+                const { cx, cy } = toCanvasCoords(p.x, predictedY, xMin, xMax, yMin, yMax);
+                ctx.beginPath();
+                ctx.arc(cx, cy, 4, 0, Math.PI * 2); // Slightly larger dots for predictions
+                ctx.fill();
+            });
+        }
+
+        /**
+         * Displays data in an HTML table.
+         */
+        function displayTable(title, headers, dataRows) {
+            let tableHTML = `
+                <h3 class="text-xl font-semibold text-gray-700 mb-2">${title}</h3>
+                <table>
+                    <thead>
+                        <tr>
+                            ${headers.map(h => `<th>${h}</th>`).join('')}
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${dataRows.map(row => `
+                            <tr>
+                                ${row.map(cell => `<td>${cell}</td>`).join('')}
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+            `;
+            dataTableContainer.innerHTML = tableHTML;
+        }
+
+        function clearTable() {
+            dataTableContainer.innerHTML = '';
+        }
+
+        // --- Animation Sequence ---
+
+        const voiceOverScripts = [
+            {
+                text: "Let's apply the Bias-Variance Trade-off to a real-world example. Imagine we have data points (the blue dots) that follow a slightly curved pattern, but with some noise. Our goal is to build a model that captures this true underlying curve (the faint gray line).",
+                audioSrc: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3', // REPLACE WITH YOUR AUDIO FILE
+                action: () => {
+                    drawAxes(xRangeMin, xRangeMax, yRangeMin, yRangeMax);
+                    drawFittedLine({ predict: trueFunction }, '#cbd5e0', xRangeMin, xRangeMax, yRangeMin, yRangeMax); // True function as faint line
+                    drawDataPoints(trainingData, '#3b82f6', xRangeMin, xRangeMax, yRangeMin, yRangeMax);
+                    clearTable();
+                },
+                delay: 10000
+            },
+            {
+                text: "First, let's try an 'Underfit' model. This is a very simple model, like a straight line, trying to fit a curved relationship. Notice how the red line systematically misses the true curve. The red prediction dots are tightly clustered around this incorrect line.",
+                audioSrc: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-2.mp3', // REPLACE WITH YOUR AUDIO FILE
+                action: () => {
+                    drawAxes(xRangeMin, xRangeMax, yRangeMin, yRangeMax);
+                    drawFittedLine({ predict: trueFunction }, '#cbd5e0', xRangeMin, xRangeMax, yRangeMin, yRangeMax); // True function
+                    drawDataPoints(trainingData, '#3b82f6', xRangeMin, xRangeMax, yRangeMin, yRangeMax);
+                    drawFittedLine(linearModel, '#ef4444', xRangeMin, xRangeMax, yRangeMin, yRangeMax); // Linear fit
+                    drawPredictionDots(linearModel, '#ef4444', trainingData, xRangeMin, xRangeMax, yRangeMin, yRangeMax); // Predictions based on linear model
+                    const sampleData = trainingData.slice(0, 5); // Take first 5 points
+                    const tableRows = sampleData.map(p => [
+                        p.x.toFixed(2),
+                        p.y.toFixed(2),
+                        linearModel.predict(p.x).toFixed(2),
+                        (Math.abs(p.y - linearModel.predict(p.x))).toFixed(2)
+                    ]);
+                    displayTable("Underfit Model (Linear)", ["X", "True Y", "Predicted Y", "Abs Error"], tableRows);
+                },
+                delay: 12000
+            },
+            {
+                text: "This is high Bias. The model is too simple and cannot capture the true pattern, leading to consistent errors. It's like always aiming left, even if your shots are grouped closely.",
+                audioSrc: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-3.mp3', // REPLACE WITH YOUR AUDIO FILE
+                action: () => {}, // Keep current view
+                delay: 8000
+            },
+            {
+                text: "Next, let's look at an 'Overfit' model. This model is too complex and tries to hit every single training data point, including the noise. See how the purple line wiggles wildly to pass through every blue dot.",
+                audioSrc: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-4.mp3', // REPLACE WITH YOUR AUDIO FILE
+                action: () => {
+                    drawAxes(xRangeMin, xRangeMax, yRangeMin, yRangeMax);
+                    drawFittedLine({ predict: trueFunction }, '#cbd5e0', xRangeMin, xRangeMax, yRangeMin, yRangeMax); // True function
+                    drawDataPoints(trainingData, '#3b82f6', xRangeMin, xRangeMax, yRangeMin, yRangeMax);
+                    drawFittedLine(overfitModel, '#8b5cf6', xRangeMin, xRangeMax, yRangeMin, yRangeMax, true); // Overfit line
+                    drawPredictionDots(overfitModel, '#8b5cf6', trainingData, xRangeMin, xRangeMax, yRangeMin, yRangeMax); // Predictions based on overfit model
+                    const sampleData = trainingData.slice(0, 5);
+                    const tableRows = sampleData.map(p => [
+                        p.x.toFixed(2),
+                        p.y.toFixed(2),
+                        overfitModel.predict(p.x).toFixed(2), // Note: predictions will be noisy for overfit
+                        (Math.abs(p.y - overfitModel.predict(p.x))).toFixed(2)
+                    ]);
+                    displayTable("Overfit Model (High Degree)", ["X", "True Y", "Predicted Y", "Abs Error"], tableRows);
+                },
+                delay: 10000
+            },
+            {
+                text: "This is high Variance. The model has learned the noise, not just the pattern. While it seems to fit the training data perfectly, its predictions for new, unseen data (if we were to show them) would be wildly scattered and inaccurate.",
+                audioSrc: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-5.mp3', // REPLACE WITH YOUR AUDIO FILE
+                action: () => {}, // Keep current view
+                delay: 10000
+            },
+            {
+                text: "Finally, let's see a 'Properly Fit' model. This quadratic model captures the underlying curved pattern without being overly sensitive to the noise. The green line closely follows the faint true curve.",
+                audioSrc: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-6.mp3', // REPLACE WITH YOUR AUDIO FILE
+                action: () => {
+                    drawAxes(xRangeMin, xRangeMax, yRangeMin, yRangeMax);
+                    drawFittedLine({ predict: trueFunction }, '#cbd5e0', xRangeMin, xRangeMax, yRangeMin, yRangeMax); // True function
+                    drawDataPoints(trainingData, '#3b82f6', xRangeMin, xRangeMax, yRangeMin, yRangeMax);
+                    drawFittedLine(quadraticModel, '#10b981', xRangeMin, xRangeMax, yRangeMin, yRangeMax); // Quadratic fit
+                    drawPredictionDots(quadraticModel, '#10b981', trainingData, xRangeMin, xRangeMax, yRangeMin, yRangeMax); // Predictions based on quadratic model
+                    const sampleData = trainingData.slice(0, 5);
+                    const tableRows = sampleData.map(p => [
+                        p.x.toFixed(2),
+                        p.y.toFixed(2),
+                        quadraticModel.predict(p.x).toFixed(2),
+                        (Math.abs(p.y - quadraticModel.predict(p.x))).toFixed(2)
+                    ]);
+                    displayTable("Properly Fit Model (Quadratic)", ["X", "True Y", "Predicted Y", "Abs Error"], tableRows);
+                },
+                delay: 10000
+            },
+            {
+                text: "The green prediction dots are tightly clustered around the true underlying curve. This model finds the 'sweet spot' – a balance between bias and variance, minimizing overall prediction error on new data.",
+                audioSrc: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-7.mp3', // REPLACE WITH YOUR AUDIO FILE
+                action: () => {}, // Keep current view
+                delay: 10000
+            },
+            {
+                text: "The goal is always to find this sweet spot, where our model is complex enough to capture the true patterns but simple enough not to be misled by random noise in the training data.",
+                audioSrc: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-8.mp3', // REPLACE WITH YOUR AUDIO FILE
+                action: () => {
+                    // Revert to conceptual bullseye for final summary, or keep the proper fit
+                    drawAxes(xRangeMin, xRangeMax, yRangeMin, yRangeMax);
+                    drawFittedLine({ predict: trueFunction }, '#cbd5e0', xRangeMin, xRangeMax, yRangeMin, yRangeMax);
+                    // The original drawSweetSpotDots used bullseye, which is now replaced by data plot.
+                    // If we want a conceptual bullseye at the end, we need to draw it explicitly.
+                    // For now, let's keep the data plot with the proper fit for consistency.
+                    drawDataPoints(trainingData, '#3b82f6', xRangeMin, xRangeMax, yRangeMin, yRangeMax);
+                    drawFittedLine(quadraticModel, '#10b981', xRangeMin, xRangeMax, yRangeMin, yRangeMax);
+                    drawPredictionDots(quadraticModel, '#10b981', trainingData, xRangeMin, xRangeMax, yRangeMin, yRangeMax);
+                    clearTable(); // Clear table for this final conceptual view
+                },
+                delay: 12000
+            },
+            {
+                text: "Animation complete! Click 'Start Animation' to replay.",
+                audioSrc: '', // No audio for final message
+                action: () => {},
+                delay: 0 // No delay after final message
+            }
+        ];
+
+        let currentStep = 0;
+        let animationTimeout;
+
+        /**
+         * Runs a single step of the animation sequence.
+         */
+        function runAnimationStep() {
+            if (currentStep < voiceOverScripts.length) {
+                const step = voiceOverScripts[currentStep];
+                voiceOverTextDiv.innerHTML = `<p>${step.text}</p>`;
+                step.action();
+
+                // Stop any currently playing audio and reset
+                currentAudio.pause();
+                currentAudio.currentTime = 0;
+
+                // Play audio for the current step if available and not muted
+                if (step.audioSrc && !isMuted) {
+                    currentAudio.src = step.audioSrc;
+                    currentAudio.play().catch(e => {
+                        console.error("Audio playback failed:", e);
+                        // This catch block often handles browser autoplay policy issues.
+                        // You might want to show a message to the user here.
+                    });
+                }
+
+                animationTimeout = setTimeout(() => {
+                    currentStep++;
+                    runAnimationStep();
+                }, step.delay);
+            } else {
+                // Animation finished
+                startButton.disabled = false; // Re-enable button
+                startButton.textContent = "Start Animation";
+                currentAudio.pause(); // Ensure audio stops at the end
+            }
+        }
+
+        /**
+         * Starts or restarts the animation.
+         */
+        function startAnimation() {
+            clearTimeout(animationTimeout); // Clear any existing timeout
+            currentStep = 0;
+            startButton.disabled = true; // Disable button during animation
+            startButton.textContent = "Animating...";
+            voiceOverTextDiv.innerHTML = "<p>Starting animation...</p>";
+            clearTable(); // Clear table at start
+            runAnimationStep();
+        }
+
+        /**
+         * Toggles mute state for the audio.
+         */
+        function toggleMute() {
+            isMuted = !isMuted;
+            currentAudio.muted = isMuted; // Set the Audio object's muted property
+            muteButton.textContent = isMuted ? "Unmute" : "Mute";
+            if (isMuted) {
+                currentAudio.pause(); // Pause if muting while playing
+            } else {
+                // If unmuting, and animation is running, try to play current audio
+                if (startButton.disabled && voiceOverScripts[currentStep] && voiceOverScripts[currentStep].audioSrc) {
+                    currentAudio.play().catch(e => console.error("Audio playback failed on unmute:", e));
+                }
+            }
+        }
+
+        // Event listeners for the buttons
+        startButton.addEventListener('click', startAnimation);
+        muteButton.addEventListener('click', toggleMute);
+
+        // Initial state when the page loads
+        window.onload = function() {
+            // Draw initial state (e.g., just axes or first data plot)
+            drawAxes(xRangeMin, xRangeMax, yRangeMin, yRangeMax);
+            voiceOverTextDiv.innerHTML = "<p>Click 'Start Animation' to begin! (Audio will play)</p>";
+            currentAudio.muted = isMuted; // Set initial mute state
+        };
+
+        // Handle canvas resizing for responsiveness (though CSS handles most of it)
+        window.addEventListener('resize', () => {
+            // Redraw current state if needed, or just let CSS scale
+            // For this simple animation, CSS scaling is sufficient.
+            // If complex redraws based on new canvas dimensions were needed:
+            // const currentScript = voiceOverScripts[currentStep] || voiceOverScripts[0];
+            // currentScript.action();
+        });
+
+    </script>
+</body>
+</html>
